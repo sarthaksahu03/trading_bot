@@ -15,7 +15,8 @@ from bot.validators import (
     validate_side,
     validate_type,
     validate_quantity,
-    validate_price
+    validate_price,
+    validate_notional
 )
 
 # Initialize logger (gets overridden in main after loading API keys for redaction)
@@ -60,28 +61,12 @@ def main(symbol: str, side: str, order_type: str, quantity: float, price: float 
         click.secho("FAILURE: Order was not placed.", fg="red", bold=True)
         sys.exit(1)
 
-    # 4. Display Order Summary
-    click.secho("\n========================================", fg="cyan", bold=True)
-    click.secho("        ORDER REQUEST SUMMARY", fg="cyan", bold=True)
-    click.secho("========================================", fg="cyan")
-    click.echo(f"  Symbol:      {symbol}")
-    click.echo(f"  Side:        {side}")
-    click.echo(f"  Type:        {order_type}")
-    click.echo(f"  Quantity:    {quantity}")
-    if price is not None:
-        click.echo(f"  Price:       {price}")
-    click.secho("========================================", fg="cyan")
+    # 4. Fetch market context & Validate Notional early
+    min_notional = None
+    est_price = None
+    est_notional = None
+    client = None
 
-    # 5. Interactive Confirmation (Bonus Feature - Enhanced CLI UX)
-    confirm_msg = f"Are you sure you want to place this {side} order for {quantity} {symbol}?"
-    if not click.confirm(click.style(confirm_msg, fg="yellow", bold=True), default=False):
-        click.secho("\nOrder placement cancelled by user.", fg="magenta")
-        logger.info("Order placement cancelled by user at confirmation prompt.")
-        click.secho("----------------------------------------", fg="yellow")
-        click.secho("FAILURE: Order cancelled.", fg="red", bold=True)
-        sys.exit(0)
-
-    # 6. Initialize Client & Execute Order
     try:
         if not api_key or not api_secret:
             raise ValueError(
@@ -91,6 +76,74 @@ def main(symbol: str, side: str, order_type: str, quantity: float, price: float 
 
         client = BinanceClient(api_key=api_key, api_secret=api_secret)
         
+        # Validate symbol exists on Binance Futures Testnet and get its details
+        symbol_info = client.get_symbol_info(symbol)
+        if not symbol_info:
+            raise ValueError(f"Symbol '{symbol}' not found on Binance Futures.")
+
+        # Find min notional filter
+        for f in symbol_info.get("filters", []):
+            if f.get("filterType") == "MIN_NOTIONAL":
+                min_notional = float(f.get("notional", 0))
+                break
+
+        if order_type == "MARKET":
+            est_price = client.get_ticker_price(symbol)
+        else:
+            est_price = price
+
+        est_notional = quantity * est_price
+
+        if min_notional is not None:
+            validate_notional(symbol_info, quantity, est_price)
+
+    except BinanceAPIError as e:
+        click.secho(f"\n[Binance API Error] Failed to fetch market context: {e.message}", fg="red", err=True)
+        logger.error(f"Failed to fetch market context for pre-flight validation: {e}")
+        click.secho("----------------------------------------", fg="yellow")
+        click.secho("FAILURE: Order was not placed.", fg="red", bold=True)
+        sys.exit(1)
+    except ValueError as e:
+        click.secho(f"\n[Validation Error] {e}", fg="red", err=True)
+        logger.error(f"Pre-flight validation failed: {e}")
+        click.secho("----------------------------------------", fg="yellow")
+        click.secho("FAILURE: Order was not placed.", fg="red", bold=True)
+        sys.exit(1)
+    except Exception as e:
+        click.secho(f"\n[Connection Error] Failed to connect to Binance Futures Testnet: {e}", fg="red", err=True)
+        logger.error(f"Failed to connect to Binance Futures Testnet for pre-flight validation: {e}")
+        click.secho("----------------------------------------", fg="yellow")
+        click.secho("FAILURE: Order was not placed.", fg="red", bold=True)
+        sys.exit(1)
+
+    # 5. Display Order Summary
+    click.secho("\n========================================", fg="cyan", bold=True)
+    click.secho("        ORDER REQUEST SUMMARY", fg="cyan", bold=True)
+    click.secho("========================================", fg="cyan")
+    click.echo(f"  Symbol:      {symbol}")
+    click.echo(f"  Side:        {side}")
+    click.echo(f"  Type:        {order_type}")
+    click.echo(f"  Quantity:    {quantity}")
+    if price is not None:
+        click.echo(f"  Price:       {price} USDT")
+    elif est_price is not None:
+        click.echo(f"  Est. Price:  {est_price:.2f} USDT")
+        
+    if est_notional is not None:
+        click.echo(f"  Est. Notional: {est_notional:.4f} USDT (Min: {min_notional:.2f} USDT)")
+    click.secho("========================================", fg="cyan")
+
+    # 6. Interactive Confirmation (Bonus Feature - Enhanced CLI UX)
+    confirm_msg = f"Are you sure you want to place this {side} order for {quantity} {symbol}?"
+    if not click.confirm(click.style(confirm_msg, fg="yellow", bold=True), default=False):
+        click.secho("\nOrder placement cancelled by user.", fg="magenta")
+        logger.info("Order placement cancelled by user at confirmation prompt.")
+        click.secho("----------------------------------------", fg="yellow")
+        click.secho("FAILURE: Order cancelled.", fg="red", bold=True)
+        sys.exit(0)
+
+    # 7. Execute Order
+    try:
         click.secho("\nSubmitting order to Binance Futures Testnet...", fg="cyan")
         response = place_order(
             client=client,
@@ -101,7 +154,7 @@ def main(symbol: str, side: str, order_type: str, quantity: float, price: float 
             price=price
         )
 
-        # 7. Print Response Details
+        # 8. Print Response Details
         click.secho("\n========================================", fg="green", bold=True)
         click.secho("        ORDER RESPONSE DETAILS", fg="green", bold=True)
         click.secho("========================================", fg="green")

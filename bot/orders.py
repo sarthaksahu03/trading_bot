@@ -6,7 +6,8 @@ from bot.validators import (
     validate_side,
     validate_type,
     validate_quantity,
-    validate_price
+    validate_price,
+    validate_notional
 )
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,17 @@ def place_order(
         f"Preparing order parameters - Symbol: {validated_symbol}, Side: {validated_side}, "
         f"Type: {validated_type}, Qty: {validated_qty}, Price: {validated_price}"
     )
+
+    # Perform client-side notional value validation
+    symbol_info = client.get_symbol_info(validated_symbol)
+    if not symbol_info:
+        raise ValueError(f"Symbol '{validated_symbol}' not found on Binance Futures.")
+
+    chk_price = validated_price
+    if chk_price is None:
+        chk_price = client.get_ticker_price(validated_symbol)
+
+    validate_notional(symbol_info, validated_qty, chk_price)
 
     # Construct the request payload parameters
     params: Dict[str, Any] = {

@@ -6,9 +6,17 @@ from bot.orders import place_order, place_market_order, place_limit_order
 @pytest.fixture
 def mock_client():
     client = MagicMock(spec=BinanceClient)
-    # Mock signature generation and time drift functions if needed
     client.time_drift = 0
     client._request = MagicMock(return_value={"orderId": 12345, "status": "NEW"})
+    
+    # Mock dynamic symbol info and ticker price
+    client.get_symbol_info = MagicMock(side_effect=lambda symbol: {
+        "symbol": symbol,
+        "filters": [
+            {"filterType": "MIN_NOTIONAL", "notional": "50"}
+        ]
+    })
+    client.get_ticker_price = MagicMock(return_value=60000.0)
     return client
 
 def test_place_market_order_parameters(mock_client):
@@ -67,4 +75,22 @@ def test_place_order_invalid_inputs(mock_client):
         place_order(mock_client, "BTCUSDT", "BUY", "MARKET", -0.01)
 
     # Check client was never called for invalid inputs
+    assert mock_client._request.call_count == 0
+
+
+def test_place_order_notional_validation_market(mock_client):
+    # Mock lower price so that 0.0001 * 10,000 = 1 USDT < 50 USDT
+    mock_client.get_ticker_price = MagicMock(return_value=10000.0)
+    
+    with pytest.raises(ValueError, match="Order notional .* is less than the minimum required notional"):
+        place_order(mock_client, "BTCUSDT", "BUY", "MARKET", 0.0001)
+
+    assert mock_client._request.call_count == 0
+
+
+def test_place_order_notional_validation_limit(mock_client):
+    # limit price = 10,000 USDT -> 0.001 * 10,000 = 10 USDT < 50 USDT
+    with pytest.raises(ValueError, match="Order notional .* is less than the minimum required notional"):
+        place_order(mock_client, "BTCUSDT", "BUY", "LIMIT", 0.001, price=10000.0)
+
     assert mock_client._request.call_count == 0

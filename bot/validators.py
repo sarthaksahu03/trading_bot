@@ -78,3 +78,26 @@ def validate_price(price: float | None, order_type: str) -> float | None:
         return None
 
     return None
+
+
+def validate_notional(symbol_info: dict, quantity: float, price: float) -> None:
+    """
+    Validates that the order's notional value is at least the MIN_NOTIONAL value defined by the exchange.
+    """
+    if not isinstance(symbol_info, dict):
+        raise ValueError("Symbol info must be a dictionary.")
+
+    min_notional = None
+    for f in symbol_info.get("filters", []):
+        if f.get("filterType") == "MIN_NOTIONAL":
+            min_notional = float(f.get("notional", 0))
+            break
+            
+    if min_notional is not None:
+        notional = quantity * price
+        if notional < min_notional:
+            symbol = symbol_info.get("symbol", "unknown")
+            raise ValueError(
+                f"Order notional ({notional:.4f}) is less than the minimum required notional ({min_notional}) "
+                f"for symbol {symbol}."
+            )

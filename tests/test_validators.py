@@ -4,7 +4,8 @@ from bot.validators import (
     validate_side,
     validate_type,
     validate_quantity,
-    validate_price
+    validate_price,
+    validate_notional
 )
 
 def test_validate_symbol_valid():
@@ -71,3 +72,29 @@ def test_validate_price_valid_market():
 def test_validate_price_invalid_market():
     with pytest.raises(ValueError, match="must not be specified for MARKET"):
         validate_price(100.0, "MARKET")
+
+
+def test_validate_notional_valid():
+    symbol_info = {
+        "symbol": "BTCUSDT",
+        "filters": [
+            {"filterType": "MIN_NOTIONAL", "notional": "50"}
+        ]
+    }
+    # Should not raise ValueError
+    validate_notional(symbol_info, 0.001, 60000.0)
+    validate_notional(symbol_info, 1.0, 50.0)
+
+
+def test_validate_notional_invalid():
+    symbol_info = {
+        "symbol": "BTCUSDT",
+        "filters": [
+            {"filterType": "MIN_NOTIONAL", "notional": "50"}
+        ]
+    }
+    with pytest.raises(ValueError, match="Order notional .* is less than the minimum required notional"):
+        validate_notional(symbol_info, 0.0001, 60000.0)
+
+    with pytest.raises(ValueError, match="Order notional .* is less than the minimum required notional"):
+        validate_notional(symbol_info, 0.5, 90.0)

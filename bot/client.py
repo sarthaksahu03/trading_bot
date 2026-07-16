@@ -26,6 +26,7 @@ class BinanceClient:
     Handles authentication, HMAC-SHA256 signing, time sync, requests, and logging.
     """
     BASE_URL = "https://testnet.binancefuture.com"
+    _exchange_info = None
 
     def __init__(self, api_key: str = None, api_secret: str = None):
         # Read from environment variables if not provided
@@ -44,7 +45,42 @@ class BinanceClient:
             "X-MBX-APIKEY": self.api_key
         })
         self.time_drift = 0
+        self._ticker_cache = {}
         self.sync_time()
+
+    def get_exchange_info(self) -> Dict[str, Any]:
+        """
+        Retrieves and caches exchange information.
+        """
+        if BinanceClient._exchange_info is None:
+            logger.info("Fetching exchange info from Binance server...")
+            BinanceClient._exchange_info = self._request("GET", "/fapi/v1/exchangeInfo", {}, signed=False)
+        return BinanceClient._exchange_info
+
+    def get_symbol_info(self, symbol: str) -> Dict[str, Any] | None:
+        """
+        Retrieves filter and metadata details for a specific symbol.
+        """
+        info = self.get_exchange_info()
+        for sym_info in info.get("symbols", []):
+            if sym_info.get("symbol") == symbol:
+                return sym_info
+        return None
+
+    def get_ticker_price(self, symbol: str) -> float:
+        """
+        Retrieves the current ticker price for a symbol, with a 5-second cache.
+        """
+        now = time.time()
+        if symbol in self._ticker_cache:
+            cache_time, price = self._ticker_cache[symbol]
+            if now - cache_time < 5.0:
+                return price
+
+        res = self._request("GET", "/fapi/v1/ticker/price", {"symbol": symbol}, signed=False)
+        price = float(res["price"])
+        self._ticker_cache[symbol] = (now, price)
+        return price
 
     def sync_time(self) -> None:
         """

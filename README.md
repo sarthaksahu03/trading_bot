@@ -48,13 +48,24 @@ Run the CLI using python:
 ```bash
 # View help and available options
 python cli.py --help
-
-# Place a MARKET BUY order
-python cli.py --symbol BTCUSDT --side BUY --type MARKET --quantity 0.001
-
-# Place a LIMIT SELL order
-python cli.py --symbol BTCUSDT --side SELL --type LIMIT --quantity 0.001 --price 95000
 ```
+
+#### Sample Commands
+
+* **Place a MARKET BUY order (Valid quantity & notional):**
+  ```bash
+  python cli.py --symbol BTCUSDT --side buy --type market --quantity 0.001
+  ```
+  
+* **Place a LIMIT SELL order (Valid quantity & notional):**
+  ```bash
+  python cli.py --symbol BTCUSDT --side sell --type limit --quantity 0.001 --price 68000
+  ```
+
+* **Failing notional value check (Fails early during pre-flight checks):**
+  ```bash
+  python cli.py --symbol BTCUSDT --side buy --type market --quantity 0.0001
+  ```
 
 ### Desktop GUI
 Launch the local desktop interface:
@@ -63,9 +74,16 @@ Launch the local desktop interface:
 python gui.py
 ```
 
-#### GUI Screenshot
-[//]: # (Placeholder for your GUI screenshot. Replace the path below with your image file)
+#### Screenshots
+
+##### GUI Desktop Interface
 ![Binance Futures GUI Screenshot](screenshot_gui.png)
+
+##### CLI Order Validation Error (Under Minimum Notional)
+![CLI Order Validation Error](screenshot_cli_1.png)
+
+##### CLI Order Placement Success
+![CLI Order Placement Success](screenshot_cli_2.png)
 
 ## Testing
 Run the automated test suite using pytest to verify validations and order construction:
